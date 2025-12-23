@@ -23,6 +23,12 @@ MprisPlayerAdaptor::MprisPlayerAdaptor(MpvObject *player)
 
 QString MprisPlayerAdaptor::playbackStatus() const {
     if (!m_player) return "Stopped";
+    
+    // Check if there's an active file/stream playing
+    bool idleActive = m_player->getProperty("idle-active").toBool();
+    if (idleActive) return "Stopped";
+    
+    // Check if pause property is set
     bool paused = m_player->getProperty("pause").toBool();
     return paused ? "Paused" : "Playing";
 }
@@ -105,7 +111,17 @@ void MprisManager::registerPlayer(MpvObject *player) {
     
     m_adaptor = new MprisPlayerAdaptor(player);
     
-    QDBusConnection dbus = QDBusConnection::sessionBus();
-    dbus.registerObject("/org/mpris/MediaPlayer2", player);
-    dbus.registerService("org.mpris.MediaPlayer2.stremio");
+    m_dbus.registerObject("/org/mpris/MediaPlayer2", player);
+    m_dbus.registerService("org.mpris.MediaPlayer2.stremio");
+}
+
+void MprisManager::unregisterPlayer() {
+    if (m_dbus.isConnected()) {
+        m_dbus.unregisterService("org.mpris.MediaPlayer2.stremio");
+        m_dbus.unregisterObject("/org/mpris/MediaPlayer2");
+    }
+}
+
+MprisManager::~MprisManager() {
+    unregisterPlayer();
 }

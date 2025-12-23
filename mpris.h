@@ -58,11 +58,14 @@ class MprisManager : public QObject {
 public:
     static MprisManager& instance();
     void registerPlayer(MpvObject *player);
+    void unregisterPlayer();
     MprisPlayerAdaptor* getAdaptor() { return m_adaptor; }
+    ~MprisManager();
 
 private:
     MprisManager() : m_adaptor(nullptr) {}
     MprisPlayerAdaptor *m_adaptor;
+    QDBusConnection m_dbus{QDBusConnection::sessionBus()};
 };
 
 #endif

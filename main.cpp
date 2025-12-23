@@ -161,6 +161,14 @@ int main(int argc, char **argv)
     #endif
     QObject::connect( &app, SIGNAL(receivedMessage(QVariant, QVariant)), engine->rootObjects().value(0),
                       SLOT(onAppMessageReceived(QVariant, QVariant)) );
+    
+    #ifdef Q_OS_LINUX
+    // Cleanup MPRIS on exit
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, [&]() {
+        MprisManager::instance().unregisterPlayer();
+    });
+    #endif
+    
     int ret = app.exec();
     delete engine;
     engine = nullptr;
