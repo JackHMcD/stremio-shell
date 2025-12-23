@@ -116,12 +116,19 @@ void MprisManager::registerPlayer(MpvObject *player) {
 }
 
 void MprisManager::unregisterPlayer() {
-    if (m_dbus.isConnected()) {
-        m_dbus.unregisterService("org.mpris.MediaPlayer2.stremio");
-        m_dbus.unregisterObject("/org/mpris/MediaPlayer2");
+    m_dbus.unregisterService("org.mpris.MediaPlayer2.stremio");
+    m_dbus.unregisterObject("/org/mpris/MediaPlayer2");
+    
+    if (m_adaptor) {
+        delete m_adaptor;
+        m_adaptor = nullptr;
     }
 }
 
 MprisManager::~MprisManager() {
+    if (m_adaptor) {
+        delete m_adaptor;
+        m_adaptor = nullptr;
+    }
     unregisterPlayer();
 }
