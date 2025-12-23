@@ -50,6 +50,11 @@ if(APPLE)
   set(ENV{OPENSSL_ROOT_DIR} $ENV{OPENSSL_BIN_PATH})
 endif()
 
+if(UNIX AND NOT APPLE)
+  list(APPEND SOURCES mpris.cpp)
+  list(APPEND SOURCES mpris.h)
+endif()
+
 set(QAPPLICATION_CLASS QApplication)
 add_subdirectory(deps/singleapplication)
 

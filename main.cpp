@@ -3,6 +3,7 @@
 #include <QSysInfo>
 
 #include <clocale>
+#include <functional>
 
 #define APP_TITLE "Stremio - Freedom to Stream"
 
@@ -24,6 +25,26 @@ typedef QApplication Application;
 #include "mpv.h"
 #include "screensaver.h"
 #include "qclipboardproxy.h"
+
+#ifdef Q_OS_LINUX
+#include "mpris.h"
+#include <QtDBus>
+#include <mpv/qthelper.hpp>
+
+inline QDBusArgument &operator<<(QDBusArgument &argument, const mpv::qt::ErrorReturn &myStruct) {
+    argument.beginStructure();
+    argument << myStruct.error;
+    argument.endStructure();
+    return argument;
+}
+
+inline const QDBusArgument &operator>>(const QDBusArgument &argument, mpv::qt::ErrorReturn &myStruct) {
+    argument.beginStructure();
+    argument >> myStruct.error;
+    argument.endStructure();
+    return argument;
+}
+#endif
 
 #else
 #include <QGuiApplication>
@@ -102,9 +123,38 @@ int main(int argc, char **argv)
     qmlRegisterType<MpvObject>("com.stremio.libmpv", 1, 0, "MpvObject");
     qmlRegisterType<ClipboardProxy>("com.stremio.clipboard", 1, 0, "Clipboard");
 
+#ifdef Q_OS_LINUX
+    qDBusRegisterMetaType<mpv::qt::ErrorReturn>();
+#endif
+
     InitializeParameters(engine, app); 
 
     engine->load(QUrl(QStringLiteral("qrc:/main.qml")));
+
+    #ifdef Q_OS_LINUX
+    // Try to find and register the MpvObject for MPRIS support
+    QObject *rootObject = engine->rootObjects().value(0);
+    if (rootObject) {
+        // Look for MpvObject in the root object's children
+        MpvObject *mpvObj = nullptr;
+        std::function<MpvObject*(QObject*)> findMpvObject = [&](QObject *obj) -> MpvObject* {
+            MpvObject *result = qobject_cast<MpvObject*>(obj);
+            if (result) return result;
+            
+            for (QObject *child : obj->children()) {
+                result = findMpvObject(child);
+                if (result) return result;
+            }
+            return nullptr;
+        };
+        
+        mpvObj = findMpvObject(rootObject);
+        
+        if (mpvObj) {
+            MprisManager::instance().registerPlayer(mpvObj);
+        }
+    }
+    #endif
 
     #ifndef Q_OS_MACOS
     QObject::connect( &app, &SingleApplication::receivedMessage, &app, &MainApp::processMessage );
