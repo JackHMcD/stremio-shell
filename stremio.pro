@@ -68,6 +68,7 @@ SOURCES += main.cpp \
     autoupdater.cpp \
     systemtray.cpp \
     qclipboardproxy.cpp \
+    mpris.cpp \
     verifysig.c
 
 RESOURCES += qml.qrc
@@ -86,5 +87,6 @@ HEADERS += \
     autoupdater.h \
     systemtray.h \
     qclipboardproxy.h \
+    mpris.h \
     verifysig.h \
     publickey.h
