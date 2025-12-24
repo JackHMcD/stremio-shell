@@ -19,28 +19,29 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install flatpak-builder
-          # We add the --user flag to ensure the runner can manage its own repo
+          # Initialize flathub for the user
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Prepare environment
         run: |
           SHELL_VERSION=$(git grep -hoP '^\s*VERSION\s*=\s*\K.*$' HEAD -- stremio.pro || echo "latest")
-          echo "FLATPAK_PATH=Stremio-${SHELL_VERSION}.flatpak" >> $GITHUB_ENV
+          echo "FLATPAK_FILENAME=Stremio-${SHELL_VERSION}.flatpak" >> $GITHUB_ENV
 
       - name: Build Flatpak
         run: |
-          # Use --user to bypass the 'GetRevokefsFd not allowed' system error
-          # Use --jobs=2 to keep memory usage low
+          # --user handles the permission issue
+          # --jobs=2 prevents OOM (Out of Memory)
           flatpak-builder --user --install-deps-from=flathub --force-clean --jobs=2 --repo=stremio-flatpak-repo _build com.stremio.Stremio.json
 
       - name: Pack Bundle
         run: |
-          flatpak build-bundle --user stremio-flatpak-repo Stremio.flatpak com.stremio.Stremio beta
-          mv Stremio.flatpak "${{ env.FLATPAK_PATH }}"
+          # No --user flag here; it's just creating a file from the repo folder
+          flatpak build-bundle stremio-flatpak-repo Stremio.flatpak com.stremio.Stremio beta
+          mv Stremio.flatpak "${{ env.FLATPAK_FILENAME }}"
 
       - name: Upload Flatpak Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Stremio-Build
-          path: ${{ env.FLATPAK_PATH }}
+          name: Stremio-Flatpak-Build
+          path: ${{ env.FLATPAK_FILENAME }}
           retention-days: 7
