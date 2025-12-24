@@ -1,0 +1,49 @@
+name: Flatpak
+
+on:
+  workflow_dispatch: # This enables the manual "Run workflow" button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Update Submodules
+        run: git submodule update --init --recursive
+
+      - name: Install Flatpak tools
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Prepare environment
+        run: |
+          # Extract version from .pro file
+          SHELL_VERSION=$(git grep -hoP '^\s*VERSION\s*=\s*\K.*$' HEAD -- stremio.pro || echo "latest")
+          FLATPAK_FILENAME="Stremio-${SHELL_VERSION}.flatpak"
+          
+          echo "SHELL_VERSION=$SHELL_VERSION" >> $GITHUB_ENV
+          echo "FLATPAK_PATH=$FLATPAK_FILENAME" >> $GITHUB_ENV
+          echo "CURRENT_BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+      - name: Build Flatpak
+        run: |
+          # Added --jobs=2 to prevent OOM issues if the build gets too heavy
+          flatpak-builder --jobs=2 --repo=stremio-flatpak-repo --install-deps-from=flathub --force-clean _build com.stremio.Stremio.json
+
+      - name: Pack Bundle
+        run: |
+          flatpak build-bundle stremio-flatpak-repo Stremio.flatpak com.stremio.Stremio beta
+          mv Stremio.flatpak "${{ env.FLATPAK_PATH }}"
+
+      - name: Upload Flatpak Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FLATPAK_PATH }}
+          path: ${{ env.FLATPAK_PATH }}
+          retention-days: 7
