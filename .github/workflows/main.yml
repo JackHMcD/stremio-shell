@@ -36,7 +36,7 @@ jobs:
       - name: Pack Bundle
         run: |
           # No --user flag here; it's just creating a file from the repo folder
-          flatpak build-bundle stremio-flatpak-repo Stremio.flatpak com.stremio.Stremio beta
+          flatpak build-bundle stremio-flatpak-repo Stremio.flatpak com.stremio.Stremio
           mv Stremio.flatpak "${{ env.FLATPAK_FILENAME }}"
 
       - name: Upload Flatpak Artifact
