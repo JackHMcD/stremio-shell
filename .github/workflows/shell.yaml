@@ -15,13 +15,11 @@ jobs:
 
     steps:
       - name: Update apt & install build dependencies
-        # Translated from Steps 2 & 3.1
-        # Added 'git', 'make', 'nodejs', and 'dpkg-dev' which are required in a bare container
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             git qtcreator qt5-qmake g++ pkgconf libssl-dev librsvg2-bin \
-            libmpv-dev libqt5webview5-dev libkf5webengineviewer-dev \
+            libmpv-dev libqt5webview5-dev qtwebengine5-dev \
             nodejs make dpkg-dev
 
       - name: Clone Stremio Repository
