@@ -1,160 +1,68 @@
-name: Shell
+name: Build Stremio for Debian
 
 on:
   push:
+    branches: [ "master", "main" ]
   pull_request:
-  schedule:
-    - cron: '15 21 * * *'
+    branches: [ "master", "main" ]
+  workflow_dispatch: # Allows manual triggering from the GitHub UI
+
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-14]
-      #  node: ['8']
-    env:
-      APP_IDENTITY: "73300DD297F59AEB5D666172E32BD9C2A710E494"
-      CERT_PASS: ${{ secrets.CERT_PASS_2 }}
-      DEST_DIR: ./build/stremio.app/Contents/MacOS
-      TAG: master
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    runs-on: ubuntu-latest
+    # Using a Debian container ensures the compiled binary uses Debian's libc,
+    # making it perfectly compatible with Debian systems.
+    container: debian:bookworm 
+
     steps:
-      - uses: maxim-lobanov/setup-xcode@v1
+      - name: Install Git (Required for Checkout)
+        run: |
+          apt-get update
+          apt-get install -y git ca-certificates
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-         xcode-version: '15'
+          # If you are running this in your own repo to build the official source,
+          # keep the 'repository' key. If you are running this inside a fork 
+          # of stremio-shell, you can remove the 'repository' line entirely.
+          repository: 'Stremio/stremio-shell'
+          submodules: recursive
+          fetch-depth: 0
 
-      - uses: actions/checkout@v5
-        with:
-          submodules: true
-
-      # - uses: actions/setup-node@v1
-      #   with:
-      #     node-version: ${{ matrix.node }}
-
-      - name: Submodules
-        run: git submodule update --init --recursive
-
-      - name: Prepare environment
+      - name: Install Build Dependencies
         run: |
-          SHELL_VERSION=$(./dist-utils/common/get-version.sh)
-          DMG_PATH="Stremio $SHELL_VERSION.dmg"
-          node -e 'process.stdout.write("CURRENT_BRANCH="+process.env.GITHUB_REF.replace(/^refs\/(heads|tags)\//, "")+"\n")' >> $GITHUB_ENV
-          echo SHELL_VERSION=$SHELL_VERSION >> $GITHUB_ENV
-          echo DMG_PATH=$DMG_PATH >> $GITHUB_ENV
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then echo DEPLOY=false >> $GITHUB_ENV; else echo DEPLOY=true >> $GITHUB_ENV; fi
+          apt-get update
+          # Install dependencies based on Stremio's DEBIAN.md documentation
+          apt-get install -y --no-install-recommends \
+            build-essential pkgconf g++ \
+            qt5-qmake qtbase5-dev qtdeclarative5-dev \
+            libssl-dev librsvg2-bin libmpv-dev \
+            libqt5webview5-dev libkf5webengineviewer-dev \
+            qml-module-qtwebchannel qml-module-qt-labs-platform \
+            qml-module-qtwebengine qml-module-qtquick-dialogs \
+            qml-module-qtquick-controls qml-module-qt-labs-settings \
+            qml-module-qt-labs-folderlistmodel \
+            nodejs wget
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: 5.15.2
-          modules: qtwebengine qtwebglplugin
+      - name: Generate Makefiles (qmake)
+        run: qmake
 
-      - name: Dependencies
+      - name: Compile Stremio
+        # Stremio uses a specific makefile for release builds
+        run: make -f release.makefile
+
+      - name: Prepare Streaming Server
+        # Stremio requires the streaming server and node runtime to be packaged 
+        # in the build directory alongside the compiled binary.
         run: |
-          npm -g install appdmg
+          cp ./server.js ./build/
+          # Copy the node binary instead of symlinking so the artifact works out-of-the-box
+          cp $(which node) ./build/node
 
-      - name: Build
-        run: |
-          git clone https://github.com/iina/iina
-          sed -i '' 's/ARCH="universal"/ARCH="x86_64"/g' ./iina/other/download_libs.sh
-          sed -i '' 's|DYLIBS_DOWNLOAD_PATH="https://iina.io/dylibs/${ARCH}"|DYLIBS_DOWNLOAD_PATH="https://iina.io/dylibs/1.3.2/${ARCH}"|' ./iina/other/download_libs.sh
-          bash ./iina/other/download_libs.sh
-          export MPV_BIN_PATH=$(pwd)/iina/deps
-          ( cd $MPV_BIN_PATH/lib && ln -s libmpv.2.dylib libmpv.dylib )
-          mkdir build
-          ( cd build && cmake -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_BUILD_TYPE=Release -DOPENSSL_CRYPTO_LIBRARY=$(pwd)/../mac/libcrypto.3.dylib -DCMAKE_RULE_MESSAGES:BOOL=OFF -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON .. && make --no-print-directory )
-
-      - name: Add binaries
-        run: |
-          cp ./mac/ffmpeg $DEST_DIR/
-          cp ./mac/ffprobe $DEST_DIR/
-          unzip ./mac/node.zip -d $DEST_DIR
-          chmod +w $DEST_DIR/ffmpeg
-          chmod +w $DEST_DIR/ffprobe
-          chmod +wx $DEST_DIR/node
-
-      - name: Deploy
-        run: |
-          macdeployqt ./build/stremio.app -executable=$DEST_DIR/ffmpeg -executable=$DEST_DIR/ffprobe  -executable=$DEST_DIR/node
-
-      - name: Server
-        env:
-          TAG: master 
-        run: |
-          curl $(cat ./server-url.txt) > $DEST_DIR/server.js
-          
-      - name: Fix dependencies
-        run: |
-          cp ./iina/deps/lib/* ./build/stremio.app/Contents/Frameworks
-          cp ./mac/libcrypto.3.dylib ./build/stremio.app/Contents/Frameworks
-
-      - name: Testdrive
-        run: ( $DEST_DIR/stremio & sleep 10 && STREMIO_PID=$! && kill $STREMIO_PID )
-
-      - name: Rename the app
-        run: mv ./build/stremio.app ./Stremio.app
-
-      - name: Setup keychain
-        run: if [ "$DEPLOY" = "true" ]; then source ./mac/keychain_profile; fi
-
-      - name: Sign App
-        run: |
-          if [ "$DEPLOY" = "true" ]; then codesign --timestamp --deep --force -vvv -s $APP_IDENTITY --entitlements ./mac/entitlements.plist --options runtime ./Stremio.app; fi
-
-      - name: Pack
-        run: |
-          ditto -c -k --rsrc --keepParent Stremio.app Stremio.app.zip
-      - name: Upload to AWS
-        shell: bash
-        env:
-          AWS_ACCESS_KEY_ID: AKIAJWBFLU34IVITPLHA
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
-          AWS_DEFAULT_REGION: eu-west-1
-        run: |
-          pip3 install s3cmd
-          if [ "$DEPLOY" = "true" ]; then s3cmd --acl-public --access_key=$AWS_ACCESS_KEY_ID --secret_key=$AWS_SECRET_ACCESS_KEY --force --region=$AWS_DEFAULT_REGION put Stremio.app.zip s3://stremio-artifacts/shell-osx/$CURRENT_BRANCH/ ; fi
-      - name: Notarizing
-        env:
-          NOTARIZATION_PWD: ${{ secrets.APPLE_DEVACCOUNT_NOTARIZATION_APP_SPECIFIC_PWD_2 }}
-          TEAM_ID: ${{ secrets.APPLE_DEVELOPER_TEAM_ID_2 }}
-        run: |
-          if [ "$DEPLOY" = "true" ]; then ./mac/notarizer.sh Stremio.app "app@stremio.com" "$NOTARIZATION_PWD" "$TEAM_ID"; fi
-
-      - name: Pack
-        run: |
-          sed -ie 's/"title": "Stremio.*"/"title": "Stremio '$SHELL_VERSION'"/' ./mac/appdmg.json
-          appdmg ./mac/appdmg.json "$DMG_PATH"
-
-      - name: Sign Dmg
-        run: |
-          if [ "$DEPLOY" = "true" ]; then codesign --deep --force -v -s $APP_IDENTITY "$DMG_PATH"; fi
-
-      - name: Store DMG
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: StremioDMG
-          path: "${{ env.DMG_PATH }}"
-
-      - name: Upload to AWS
-        shell: bash
-        env:
-          AWS_ACCESS_KEY_ID: AKIAJWBFLU34IVITPLHA
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET }}
-          AWS_DEFAULT_REGION: eu-west-1
-        run: |
-          pip3 install s3cmd
-           if [ "$DEPLOY" = "true" ]; then s3cmd --acl-public --access_key=$AWS_ACCESS_KEY_ID --secret_key=$AWS_SECRET_ACCESS_KEY --force --region=$AWS_DEFAULT_REGION put "$DMG_PATH" s3://stremio-artifacts/shell-osx/$CURRENT_BRANCH/ ; fi
-
-  slackNotification:
-    name: Slack Notification
-    runs-on: ubuntu-latest
-    steps:
-      - name: Notify Slack channel
-        uses: rtCamp/action-slack-notify@master
-        env:
-          SLACK_USERNAME: Github Action
-          SLACK_ICON: https://s3-us-west-2.amazonaws.com/slack-files2/bot_icons/2020-10-19/1422366829703_48.png
-          SLACK_TITLE: Github Builds - Shell
-          SLACK_CHANNEL: '#installer-ci'
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-        if: ${{ !github.event.pull_request }}
+          name: stremio-debian-build
+          path: build/
+          retention-days: 7
