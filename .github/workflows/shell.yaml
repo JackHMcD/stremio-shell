@@ -59,6 +59,44 @@ jobs:
           # Copy the node binary instead of symlinking so the artifact works out-of-the-box
           cp $(which node) ./build/node
 
+      - name: Build Debian Package
+        run: |
+          # 1. Create the standard Debian package directory structure
+          mkdir -p deb-package/opt/stremio
+          mkdir -p deb-package/usr/bin
+          mkdir -p deb-package/DEBIAN
+
+          # 2. Move the compiled binary and node server into /opt
+          cp build/stremio build/server.js build/node deb-package/opt/stremio/
+          chmod +x deb-package/opt/stremio/stremio deb-package/opt/stremio/node
+
+          # 3. Create a symlink so typing 'stremio' in the shell launches it
+          ln -s /opt/stremio/stremio deb-package/usr/bin/stremio
+
+          # 4. Generate the control file with package metadata
+          # Note: The Depends line includes the runtime libraries (not the -dev versions)
+          cat <<EOF > deb-package/DEBIAN/control
+          Package: stremio
+          Version: 4.4.0
+          Architecture: amd64
+          Maintainer: Stremio Build
+          Description: Stremio video streaming application
+          Depends: libqt5opengl5, libmpv2, qml-module-qtwebengine, qml-module-qtwebchannel
+          EOF
+
+          chmod 755 deb-package/DEBIAN
+
+          # 5. Compile the directory into a .deb file
+          dpkg-deb --build deb-package stremio-trixie.deb
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stremio-debian-installer
+          # Tell GitHub to upload the specific .deb file we just created
+          path: stremio-trixie.deb
+          retention-days: 7
+
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
