@@ -1,105 +1,93 @@
-name: Build Stremio for Debian
+name: Build Stremio for Debian Trixie
 
 on:
+  workflow_dispatch: # Allows you to trigger the build manually from the Actions tab
   push:
-    branches: [ "master", "main" ]
-  pull_request:
-    branches: [ "master", "main" ]
-  workflow_dispatch: # Allows manual triggering from the GitHub UI
+    branches:
+      - main
 
 jobs:
-  build:
+  build-deb:
     runs-on: ubuntu-latest
-    # Using a Debian container ensures the compiled binary uses Debian's libc,
-    # making it perfectly compatible with Debian systems.
-    container: debian:trixie 
+    # Run the entire job inside a Debian Trixie environment
+    container:
+      image: debian:trixie
 
     steps:
-      - name: Install Git (Required for Checkout)
+      - name: Update apt & install build dependencies
+        # Translated from Steps 2 & 3.1
+        # Added 'git', 'make', 'nodejs', and 'dpkg-dev' which are required in a bare container
         run: |
           apt-get update
-          apt-get install -y git ca-certificates
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git qtcreator qt5-qmake g++ pkgconf libssl-dev librsvg2-bin \
+            libmpv-dev libqt5webview5-dev libkf5webengineviewer-dev \
+            nodejs make dpkg-dev
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          # If you are running this in your own repo to build the official source,
-          # keep the 'repository' key. If you are running this inside a fork 
-          # of stremio-shell, you can remove the 'repository' line entirely.
-          repository: 'Stremio/stremio-shell'
-          submodules: recursive
-          fetch-depth: 0
+      - name: Clone Stremio Repository
+        # Translated from Step 1
+        run: git clone --recurse-submodules -j8 https://github.com/Stremio/stremio-shell.git
 
-      - name: Install Build Dependencies
+      - name: Build Stremio
+        # Translated from Steps 3 & 4
+        working-directory: ./stremio-shell
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            build-essential pkgconf g++ cmake \
-            qt5-qmake qtbase5-dev qtdeclarative5-dev \
-            libssl-dev librsvg2-bin libmpv-dev \
-            libqt5webview5-dev qtwebengine5-dev libqt5opengl5-dev \
-            qml-module-qtwebchannel qml-module-qt-labs-platform \
-            qml-module-qtwebengine qml-module-qtquick-dialogs \
-            qml-module-qtquick-controls qml-module-qt-labs-settings \
-            qml-module-qt-labs-folderlistmodel \
-            nodejs wget
+          qmake
+          make -f release.makefile
 
-      - name: Generate Makefiles (qmake)
-        run: qmake
-
-      - name: Compile Stremio
-        # Stremio uses a specific makefile for release builds
-        run: make -f release.makefile
-
-      - name: Prepare Streaming Server
-        # Stremio requires the streaming server and node runtime to be packaged 
-        # in the build directory alongside the compiled binary.
+      - name: Prepare Streaming Server (NodeJS)
+        # Translated from Step 5
+        working-directory: ./stremio-shell
         run: |
           cp ./server.js ./build/
-          # Copy the node binary instead of symlinking so the artifact works out-of-the-box
-          cp $(which node) ./build/node
+          ln -s /usr/bin/node ./build/node
 
-      - name: Build Debian Package
+      - name: Construct Debian Package Structure
+        working-directory: ./stremio-shell
         run: |
-          # 1. Create the standard Debian package directory structure
-          mkdir -p deb-package/opt/stremio
-          mkdir -p deb-package/usr/bin
-          mkdir -p deb-package/DEBIAN
+          # Create standard Linux file hierarchy
+          mkdir -p package/opt/stremio
+          mkdir -p package/usr/bin
+          mkdir -p package/usr/share/applications
+          mkdir -p package/DEBIAN
 
-          # 2. Move the compiled binary and node server into /opt
-          cp build/stremio build/server.js build/node deb-package/opt/stremio/
-          chmod +x deb-package/opt/stremio/stremio deb-package/opt/stremio/node
+          # Move all build artifacts into /opt/stremio
+          cp -r build/* package/opt/stremio/
 
-          # 3. Create a symlink so typing 'stremio' in the shell launches it
-          ln -s /opt/stremio/stremio deb-package/usr/bin/stremio
+          # Symlink the binary so users can launch it from the terminal
+          ln -s /opt/stremio/stremio package/usr/bin/stremio
 
-          # 4. Generate the control file with package metadata
-          # Note: The Depends line includes the runtime libraries (not the -dev versions)
-          cat <<EOF > deb-package/DEBIAN/control
+          # Generate the DEBIAN/control file
+          # The 'Depends' line translates Step 6 (runtime dependencies) so apt automatically installs them
+          cat <<EOF > package/DEBIAN/control
           Package: stremio
-          Version: 4.4.0
+          Version: 4.4.0-${{ github.run_number }}
           Architecture: amd64
-          Maintainer: Stremio Build
-          Description: Stremio video streaming application
-          Depends: libqt5opengl5, libmpv2, qml-module-qtwebengine, qml-module-qtwebchannel
+          Maintainer: GitHub Actions
+          Section: video
+          Priority: optional
+          Depends: nodejs, qml-module-qtwebchannel, qml-module-qt-labs-platform, qml-module-qtwebengine, qml-module-qtquick-dialogs, qml-module-qtquick-controls, qtdeclarative5-dev, qml-module-qt-labs-settings, qml-module-qt-labs-folderlistmodel, libmpv2 | libmpv-client
+          Description: Stremio Shell (Debian Trixie)
+           Modern media center that gives you the freedom to watch everything you want.
           EOF
 
-          chmod 755 deb-package/DEBIAN
+          # Create a desktop shortcut for the app grid/launcher
+          cat <<EOF > package/usr/share/applications/stremio.desktop
+          [Desktop Entry]
+          Name=Stremio
+          Exec=/usr/bin/stremio
+          Terminal=false
+          Type=Application
+          Categories=AudioVideo;Video;Player;
+          EOF
 
-          # 5. Compile the directory into a .deb file
-          dpkg-deb --build deb-package stremio-trixie.deb
+      - name: Build .deb package
+        working-directory: ./stremio-shell
+        run: dpkg-deb --build package stremio-trixie.deb
 
-      - name: Upload Build Artifact
+      - name: Upload .deb Artifact
+        # Uploads the compiled .deb so you can download it from the GitHub Actions UI
         uses: actions/upload-artifact@v4
         with:
-          name: stremio-debian-installer
-          # Tell GitHub to upload the specific .deb file we just created
-          path: stremio-trixie.deb
-          retention-days: 7
-
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: stremio-debian-build
-          path: build/
-          retention-days: 7
+          name: stremio-debian-trixie
+          path: ./stremio-shell/stremio-trixie.deb
