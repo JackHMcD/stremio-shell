@@ -33,12 +33,11 @@ jobs:
       - name: Install Build Dependencies
         run: |
           apt-get update
-          # Install dependencies based on Stremio's DEBIAN.md documentation
           apt-get install -y --no-install-recommends \
             build-essential pkgconf g++ cmake \
             qt5-qmake qtbase5-dev qtdeclarative5-dev \
             libssl-dev librsvg2-bin libmpv-dev \
-            libqt5webview5-dev libkf5webengineviewer-dev \
+            libqt5webview5-dev qtwebengine5-dev \
             qml-module-qtwebchannel qml-module-qt-labs-platform \
             qml-module-qtwebengine qml-module-qtquick-dialogs \
             qml-module-qtquick-controls qml-module-qt-labs-settings \
