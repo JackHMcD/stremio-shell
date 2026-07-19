@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     # Using a Debian container ensures the compiled binary uses Debian's libc,
     # making it perfectly compatible with Debian systems.
-    container: debian:bookworm 
+    container: debian:trixie 
 
     steps:
       - name: Install Git (Required for Checkout)
@@ -35,7 +35,7 @@ jobs:
           apt-get update
           # Install dependencies based on Stremio's DEBIAN.md documentation
           apt-get install -y --no-install-recommends \
-            build-essential pkgconf g++ \
+            build-essential pkgconf g++ cmake \
             qt5-qmake qtbase5-dev qtdeclarative5-dev \
             libssl-dev librsvg2-bin libmpv-dev \
             libqt5webview5-dev libkf5webengineviewer-dev \
