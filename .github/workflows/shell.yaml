@@ -20,7 +20,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             git qtcreator qt5-qmake g++ pkgconf libssl-dev librsvg2-bin \
             libmpv-dev libqt5webview5-dev qtwebengine5-dev \
-            nodejs make dpkg-dev
+            nodejs make dpkg-dev cmake
 
       - name: Clone Stremio Repository
         # Translated from Step 1
