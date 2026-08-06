@@ -21,10 +21,13 @@ jobs:
             git qtcreator qt5-qmake g++ pkgconf libssl-dev librsvg2-bin \
             libmpv-dev libqt5webview5-dev qtwebengine5-dev \
             nodejs make dpkg-dev cmake wget ca-certificates
-      - name: Clone Stremio Repository
-        # Translated from Step 1
-        run: git clone --recurse-submodules -j8 https://github.com/Stremio/stremio-shell.git
-
+            
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: stremio-shell
+          
       - name: Build Stremio
         working-directory: ./stremio-shell
         run: |
